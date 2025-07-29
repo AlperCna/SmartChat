@@ -8,7 +8,7 @@ def main():
         else:
             print("❌ Bağlantı kusulamadı.")
     except Exception as e:
-        print(f"❌ Bağlantı hatası: {e}")
+        print(f"❌ Bağlantı hata: {e}")
     finally:
         if 'conn' in locals() and conn.is_connected():
             conn.close()
