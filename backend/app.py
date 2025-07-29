@@ -7,7 +7,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False  # Türkçe karakter sorununu önler
 
-CORS(app)  # Frontend'in API'ye erişmesini sağlar alpor
+CORS(app)  # Frontend'in API'ye erişmesini sağlar deneme123
 
 # Test endpoint'i
 @app.route("/hello", methods=["GET"])
