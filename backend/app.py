@@ -3,6 +3,7 @@
 from flask import Flask, jsonify, request
 from backend.services import db_service
 from flask_cors import CORS
+import bcrypt
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False  # Türkçe karakter sorununu önler
@@ -60,6 +61,67 @@ def list_messages():
 
     messages = db_service.get_messages(sender_id, receiver_id)
     return jsonify(messages)
+
+@app.route("/signup", methods=["POST"])
+def signup():
+    try:
+        data = request.get_json()
+        username = data.get("username", "").strip()
+        email = data.get("email", "").strip()
+        password = data.get("password", "")
+
+        # 1️⃣ Validate input
+        if not username or not email or not password:
+            return jsonify({"error": "All fields are required"}), 400
+
+        # 2️⃣ Check if email already exists
+        existing_user = db_service.get_user_by_email(email)
+        if existing_user:
+            return jsonify({"error": "Email is already registered"}), 409
+
+        # 3️⃣ Check if username already exists
+        existing_username = db_service.get_user_by_username(username)
+        if existing_username:
+            return jsonify({"error": "Username is already taken"}), 409
+
+        # 4️⃣ Hash password with bcrypt
+        hashed_pw = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+        # 5️⃣ Insert into DB
+        db_service.insert_user(username, email, hashed_pw)
+
+        return jsonify({"message": "User created successfully"}), 201
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/login", methods=["POST"])
+def login():
+    try:
+        data = request.get_json()
+        email = data.get("email", "").strip()
+        password = data.get("password", "")
+
+        # Find user
+        user = db_service.get_user_by_email(email)
+        if not user:
+            return jsonify({"success": False, "error": "User not found"}), 401
+
+        stored_pw = user["password_hash"]
+        if not stored_pw or not stored_pw.startswith("$2"):  # bcrypt hashes always start with $2
+            return jsonify({"success": False, "error": "Invalid password hash format"}), 500
+
+        # Check password
+        if not bcrypt.checkpw(password.encode("utf-8"), stored_pw.encode("utf-8")):
+            return jsonify({"success": False, "error": "Invalid password"}), 401
+
+        return jsonify({"success": True, "user_id": user["user_id"]}), 200
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+
 
 
 # Ana çalışma bloğu

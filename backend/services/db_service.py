@@ -1,3 +1,4 @@
+import bcrypt
 import mysql.connector
 
 # Veritabanı bağlantısı fonksiyonu
@@ -5,12 +6,13 @@ def get_db_connection():
     conn = mysql.connector.connect(
         host="localhost",        # AWS RDS'e geçince burası değişecek
         user="root",             # MySQL kullanıcı adın
-        password="bc748596", # MySQL şifren
+        password="aKiF7779", # MySQL şifren
         database="smartchat"
     )
     return conn
 
 # Kullanıcı ekleme
+# backend/services/db_service.py
 def insert_user(username, email, password_hash):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -19,6 +21,7 @@ def insert_user(username, email, password_hash):
     conn.commit()
     cursor.close()
     conn.close()
+
 
 # Tüm kullanıcıları listeleme
 def get_users():
@@ -57,6 +60,33 @@ def get_messages(sender_id, receiver_id):
     conn.close()
     return messages
 
+def create_user(username, email, password, user_type="default"):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    hashed_pw = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+    sql = "INSERT INTO users (username, email, password_hash, user_type) VALUES (%s, %s, %s, %s)"
+    cursor.execute(sql, (username, email, hashed_pw.decode('utf-8'), user_type))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def get_user_by_email(email):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+    user = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return user
+
+def get_user_by_username(username):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+    user = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return user
 
 
 
