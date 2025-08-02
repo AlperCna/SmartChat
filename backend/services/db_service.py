@@ -1,18 +1,15 @@
 import bcrypt
 import mysql.connector
 
-# Veritabanı bağlantısı fonksiyonu
 def get_db_connection():
     conn = mysql.connector.connect(
-        host="localhost",        # AWS RDS'e geçince burası değişecek
-        user="root",             # MySQL kullanıcı adın
-        password="aKiF7779", # MySQL şifren
+        host="localhost",
+        user="root",
+        password="efebursa16",
         database="smartchat"
     )
     return conn
 
-# Kullanıcı ekleme
-# backend/services/db_service.py
 def insert_user(username, email, password_hash):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -22,8 +19,6 @@ def insert_user(username, email, password_hash):
     cursor.close()
     conn.close()
 
-
-# Tüm kullanıcıları listeleme
 def get_users():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -33,8 +28,6 @@ def get_users():
     conn.close()
     return users
 
-
-# Yeni mesaj ekle
 def insert_message(sender_id, receiver_id, content):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -44,7 +37,6 @@ def insert_message(sender_id, receiver_id, content):
     cursor.close()
     conn.close()
 
-# İki kullanıcı arasındaki mesajları listeleme
 def get_messages(sender_id, receiver_id):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -59,16 +51,6 @@ def get_messages(sender_id, receiver_id):
     cursor.close()
     conn.close()
     return messages
-
-def create_user(username, email, password, user_type="default"):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    hashed_pw = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    sql = "INSERT INTO users (username, email, password_hash, user_type) VALUES (%s, %s, %s, %s)"
-    cursor.execute(sql, (username, email, hashed_pw.decode('utf-8'), user_type))
-    conn.commit()
-    cursor.close()
-    conn.close()
 
 def get_user_by_email(email):
     conn = get_db_connection()
@@ -88,6 +70,25 @@ def get_user_by_username(username):
     conn.close()
     return user
 
+def get_user_by_id(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
+    user = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return user
 
-
-
+def get_chat_partners(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT DISTINCT u.user_id, u.username
+        FROM users u
+        JOIN messages m ON (u.user_id = m.sender_id OR u.user_id = m.receiver_id)
+        WHERE %s IN (m.sender_id, m.receiver_id) AND u.user_id != %s
+    """, (user_id, user_id))
+    result = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return result

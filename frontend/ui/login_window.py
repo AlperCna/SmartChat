@@ -1,16 +1,41 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QPushButton, QLabel
 import requests
 from .signup_window import SignupWindow
-from .chat_window import ChatWindow
+from .chat_panel_window import ChatPanelWindow
 
 class LoginWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SmartChat Login")
+        self.setWindowTitle("SmartChat - Login")
         self.setMinimumWidth(300)
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #121212;
+                color: white;
+                font-family: 'Segoe UI';
+            }
+            QLineEdit {
+                background-color: #1e1e1e;
+                border: 1px solid #444;
+                border-radius: 8px;
+                padding: 8px;
+                color: white;
+            }
+            QPushButton {
+                background-color: #3a87f2;
+                color: white;
+                border-radius: 8px;
+                padding: 8px;
+            }
+            QPushButton:hover {
+                background-color: #5c9dff;
+            }
+            QLabel {
+                padding: 4px;
+            }
+        """)
 
         layout = QVBoxLayout()
-
         self.error_label = QLabel("")
         self.error_label.setStyleSheet("color: red;")
 
@@ -48,28 +73,25 @@ class LoginWindow(QWidget):
             if r.status_code == 200:
                 data = r.json()
                 if data.get("success"):
-                    self.error_label.setStyleSheet("color: green;")
-                    self.error_label.setText("✅ Login successful")
-
+                    self.error_label.setStyleSheet("color: lightgreen;")
+                    self.error_label.setText("\u2705 Login successful")
                     user_id = data.get("user_id")
-
-                    # ✅ Open chat window
-                    self.chat_window = ChatWindow(sender_id=user_id, receiver_id=None)  
-                    self.chat_window.show()
-
+                    self.panel_window = ChatPanelWindow(user_id)
+                    self.panel_window.show()
                     self.close()
                 else:
                     self.error_label.setStyleSheet("color: red;")
-                    self.error_label.setText("❌ " + data.get("error", "Login failed"))
+                    self.error_label.setText("\u274C " + data.get("error", "Login failed"))
             else:
                 try:
                     err_data = r.json()
-                    self.error_label.setText("❌ " + err_data.get("error", "Server error"))
+                    self.error_label.setText("\u274C " + err_data.get("error", "Server error"))
                 except:
-                    self.error_label.setText("❌ Server error")
+                    self.error_label.setText("\u274C Server error")
         except Exception as e:
             self.error_label.setText("Error: " + str(e))
 
     def open_signup(self):
         self.signup_window = SignupWindow()
         self.signup_window.show()
+        self.close()
