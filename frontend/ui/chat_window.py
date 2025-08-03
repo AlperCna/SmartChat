@@ -11,7 +11,7 @@ class ChatWindow(QWidget):
         self.receiver_id = receiver_id
         self.sender_username = sender_username
         self.receiver_username = receiver_username
-        self.on_close_callback = on_close_callback  # ✅ dışarıdan callback alınır
+        self.on_close_callback = on_close_callback
 
         self.setMinimumSize(400, 500)
         self.setStyleSheet("""
@@ -42,7 +42,6 @@ class ChatWindow(QWidget):
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
 
-        # ✅ Başlık ve kapatma butonu aynı satırda
         title_layout = QHBoxLayout()
         self.title_label = QLabel(f"💬 Konuşma: {self.receiver_username}")
         self.title_label.setAlignment(Qt.AlignLeft)
@@ -92,11 +91,12 @@ class ChatWindow(QWidget):
     def add_message_label(self, text, sender, timestamp):
         time_text = "--:--"
         try:
-            time_text = datetime.fromisoformat(timestamp).strftime("%H:%M") if timestamp else "--:--"
-        except:
-            pass
+            dt = datetime.strptime(timestamp, "%a, %d %b %Y %H:%M:%S %Z")
+            time_text = dt.strftime("%H:%M")
+        except Exception as e:
+            print("[TIME_PARSE_ERROR]", timestamp, e)
 
-        header = QLabel(f"{sender}  \u23F0 {time_text}")
+        header = QLabel(f"{sender}  ⏱ {time_text}")
         header.setStyleSheet("color: #ccc; font-size: 11px; padding-bottom: 2px;")
 
         body = QLabel(text)
@@ -144,6 +144,7 @@ class ChatWindow(QWidget):
                     if widget is not None:
                         widget.deleteLater()
                 for msg in messages:
+                    print("[DEBUG]", msg)  # terminale basar
                     sender_name = self.sender_username if msg["sender_id"] == self.sender_id else self.receiver_username
                     self.add_message_label(msg["content"], sender_name, msg.get("timestamp"))
                 self.scroll.verticalScrollBar().setValue(self.scroll.verticalScrollBar().maximum())
@@ -168,4 +169,4 @@ class ChatWindow(QWidget):
                 self.message_input.clear()
                 self.load_messages()
         except Exception as e:
-            self.add_message_label(f"Gonderim hatasi: {e}", "Sistem", None)
+            self.add_message_label(f"Gönderim hatası: {e}", "Sistem", None)
