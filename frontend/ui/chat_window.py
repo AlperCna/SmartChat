@@ -1,16 +1,17 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel, QLineEdit, QMessageBox, QListWidgetItem, QDialog, QTextEdit, QScrollArea, QSizePolicy
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy
 from PyQt5.QtCore import Qt, QTimer
 import requests
 from datetime import datetime
 
 
 class ChatWindow(QWidget):
-    def __init__(self, sender_id, sender_username, receiver_id, receiver_username):
+    def __init__(self, sender_id, sender_username, receiver_id, receiver_username, on_close_callback=None):
         super().__init__()
         self.sender_id = sender_id
         self.receiver_id = receiver_id
         self.sender_username = sender_username
         self.receiver_username = receiver_username
+        self.on_close_callback = on_close_callback  # ✅ dışarıdan callback alınır
 
         self.setMinimumSize(400, 500)
         self.setStyleSheet("""
@@ -41,9 +42,21 @@ class ChatWindow(QWidget):
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
 
-        self.title_label = QLabel(f"\U0001F4AC Konusma: {self.receiver_username}")
-        self.title_label.setAlignment(Qt.AlignCenter)
-        self.layout.addWidget(self.title_label)
+        # ✅ Başlık ve kapatma butonu aynı satırda
+        title_layout = QHBoxLayout()
+        self.title_label = QLabel(f"💬 Konuşma: {self.receiver_username}")
+        self.title_label.setAlignment(Qt.AlignLeft)
+
+        self.close_button = QPushButton("❌")
+        self.close_button.setFixedSize(30, 30)
+        self.close_button.clicked.connect(self.close_chat_clicked)
+        self.close_button.setStyleSheet("background-color: transparent; font-size: 14px;")
+
+        title_layout.addWidget(self.title_label)
+        title_layout.addStretch()
+        title_layout.addWidget(self.close_button)
+
+        self.layout.addLayout(title_layout)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -56,8 +69,8 @@ class ChatWindow(QWidget):
         self.layout.addWidget(self.scroll)
 
         self.message_input = QLineEdit()
-        self.message_input.setPlaceholderText("Mesaj yazin...")
-        self.send_button = QPushButton("Gonder")
+        self.message_input.setPlaceholderText("Mesaj yazın...")
+        self.send_button = QPushButton("Gönder")
 
         input_layout = QHBoxLayout()
         input_layout.addWidget(self.message_input)
@@ -71,6 +84,10 @@ class ChatWindow(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.load_messages)
         self.timer.start(3000)
+
+    def close_chat_clicked(self):
+        if self.on_close_callback:
+            self.on_close_callback()
 
     def add_message_label(self, text, sender, timestamp):
         time_text = "--:--"

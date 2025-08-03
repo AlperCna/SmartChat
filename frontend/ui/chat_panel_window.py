@@ -3,12 +3,14 @@ from PyQt5.QtCore import Qt
 from .chat_window import ChatWindow
 import requests
 
-
 class ChatPanelWindow(QWidget):
     def __init__(self, user_id):
         super().__init__()
         self.user_id = user_id
         self.sender_username = ""
+        self.active_chat = None
+        self.chat_placeholder = None
+
         self.setWindowTitle("💬 SmartChat — Sohbetler")
         self.setMinimumSize(900, 600)
         self.setStyleSheet("""
@@ -46,11 +48,10 @@ class ChatPanelWindow(QWidget):
             }
         """)
 
-        self.active_chat = None
-
         main_layout = QHBoxLayout()
         self.setLayout(main_layout)
 
+        # Sol Panel
         left_panel = QVBoxLayout()
         self.username_label = QLabel("👤")
         self.username_label.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
@@ -65,6 +66,7 @@ class ChatPanelWindow(QWidget):
         left_panel.addWidget(self.chat_list)
         left_panel.addWidget(self.new_chat_btn)
 
+        # Sağ Panel
         self.chat_area = QVBoxLayout()
         self.chat_placeholder = QLabel("💬 Sağda sohbet penceresi görünecek.")
         self.chat_placeholder.setAlignment(Qt.AlignCenter)
@@ -75,7 +77,6 @@ class ChatPanelWindow(QWidget):
         main_layout.addLayout(self.chat_area, 5)
 
         self.chat_list.itemClicked.connect(self.open_selected_chat)
-
         self.load_user_info()
         self.load_chat_partners()
 
@@ -108,22 +109,37 @@ class ChatPanelWindow(QWidget):
             receiver = res.json()
             receiver_id = receiver["user_id"]
 
-            # Önceki pencereyi kaldır
-            if self.active_chat:
-                self.chat_area.removeWidget(self.active_chat)
-                self.active_chat.setParent(None)
-                self.active_chat.deleteLater()
-                self.active_chat = None
+            self.clear_chat_area()
 
-            # Yeni pencereyi oluştur
             self.chat_widget = ChatWindow(
                 sender_id=self.user_id,
                 sender_username=self.sender_username,
                 receiver_id=receiver_id,
-                receiver_username=receiver_username
+                receiver_username=receiver_username,
+                on_close_callback=self.close_chat  # ✅ sağ üstteki X butonu çalışır
             )
             self.chat_area.addWidget(self.chat_widget)
             self.active_chat = self.chat_widget
+
+    def close_chat(self):
+        if self.active_chat:
+            self.chat_area.removeWidget(self.active_chat)
+            self.active_chat.setParent(None)
+            self.active_chat.deleteLater()
+            self.active_chat = None
+
+            self.chat_placeholder = QLabel("💬 Sağda sohbet penceresi görünecek.")
+            self.chat_placeholder.setAlignment(Qt.AlignCenter)
+            self.chat_placeholder.setStyleSheet("color: #888; font-size: 16px;")
+            self.chat_area.addWidget(self.chat_placeholder)
+
+    def clear_chat_area(self):
+        while self.chat_area.count():
+            widget = self.chat_area.takeAt(0).widget()
+            if widget:
+                widget.setParent(None)
+                widget.deleteLater()
+        self.chat_placeholder = None
 
     def new_chat(self):
         dialog = QDialog(self)
@@ -159,21 +175,16 @@ class ChatPanelWindow(QWidget):
             receiver_id, receiver_username = item.data(Qt.UserRole)
             dialog.accept()
 
-            # Listeye ekle
             if not any(self.chat_list.item(i).text() == receiver_username for i in range(self.chat_list.count())):
                 self.chat_list.addItem(receiver_username)
 
-            if self.active_chat:
-                self.chat_area.removeWidget(self.active_chat)
-                self.active_chat.setParent(None)
-                self.active_chat.deleteLater()
-                self.active_chat = None
-
+            self.clear_chat_area()
             self.chat_widget = ChatWindow(
                 sender_id=self.user_id,
                 sender_username=self.sender_username,
                 receiver_id=receiver_id,
-                receiver_username=receiver_username
+                receiver_username=receiver_username,
+                on_close_callback=self.close_chat
             )
             self.chat_area.addWidget(self.chat_widget)
             self.active_chat = self.chat_widget
