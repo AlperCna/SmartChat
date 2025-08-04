@@ -5,6 +5,8 @@ from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 import requests
 from datetime import datetime
 import os
+import concurrent.futures
+
 
 class ChatWindow(QWidget):
     def __init__(self, sender_id, sender_username, receiver_id, receiver_username, on_close_callback=None):
@@ -43,9 +45,9 @@ class ChatWindow(QWidget):
 
         self.layout = QVBoxLayout()
         self.media_players = []  # 🎧 Ses çalarları RAM'de tut
-
         self.setLayout(self.layout)
 
+        # Başlık
         title_layout = QHBoxLayout()
         self.title_label = QLabel(f"💬 Konuşma: {self.receiver_username}")
         self.title_label.setAlignment(Qt.AlignLeft)
@@ -60,6 +62,7 @@ class ChatWindow(QWidget):
         title_layout.addWidget(self.close_button)
         self.layout.addLayout(title_layout)
 
+        # Mesaj paneli
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.message_container = QWidget()
@@ -69,6 +72,7 @@ class ChatWindow(QWidget):
         self.scroll.setWidget(self.message_container)
         self.layout.addWidget(self.scroll)
 
+        # Mesaj giriş alanı
         self.message_input = QLineEdit()
         self.message_input.setPlaceholderText("Mesaj yazın...")
         self.send_button = QPushButton("Gönder")
@@ -78,9 +82,25 @@ class ChatWindow(QWidget):
         input_layout.addWidget(self.send_button)
         self.layout.addLayout(input_layout)
 
+        # Öneri kutusu
+        self.suggestion_label = QLabel("")
+        self.suggestion_label.setStyleSheet("color: #aaa; font-style: italic; padding-left: 4px;")
+        self.suggestion_label.setCursor(Qt.PointingHandCursor)
+        self.layout.addWidget(self.suggestion_label)
+        self.suggestion_label.mousePressEvent = self.accept_suggestion
+
+        # Öneri zamanlayıcı (QTimer ile gecikmeli çalıştırma)
+        self.suggestion_timer = QTimer()
+        self.suggestion_timer.setSingleShot(True)
+        self.suggestion_timer.timeout.connect(self._trigger_suggestion)
+        self.message_input.textChanged.connect(self._schedule_suggestion)
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+        # Gönder butonu ve enter tuşu
         self.send_button.clicked.connect(self.send_message)
         self.message_input.returnPressed.connect(self.send_message)
 
+        # Mesajları yükle ve yenile
         self.load_messages()
         self.timer = QTimer()
         self.timer.timeout.connect(self.load_messages)
@@ -296,3 +316,60 @@ class ChatWindow(QWidget):
                 self.load_messages()
         except Exception as e:
             self.add_message_label(f"Gönderim hatası: {e}", "Sistem", None)
+
+    def get_suggestion(self):
+        text = self.message_input.text().strip()
+        if not text:
+            self.suggestion_label.setText("")
+            return
+
+        def fetch_suggestion():
+            try:
+                res = requests.post("http://127.0.0.1:5000/suggest", json={
+                    "text": text,
+                    "user_id": self.sender_id
+                })
+                if res.status_code == 200:
+                    data = res.json()
+                    suggested = data.get("punctuated")
+                    suggestion_id = data.get("suggestion_id")
+                    return (suggested, suggestion_id)
+            except:
+                return None
+
+        def on_result(result):
+            if not result:
+                self.suggestion_label.setText("⚠️ Error")
+                return
+            suggested, suggestion_id = result
+            if suggested and suggested != text:
+                self.suggestion_label.setText(f"💡 Suggestion: {suggested}")
+                self.last_suggestion_id = suggestion_id
+            else:
+                self.suggestion_label.setText("")
+
+        # ✅ Artık ayrı thread'de çalışıyor
+        self.executor.submit(lambda: on_result(fetch_suggestion()))
+
+
+    def accept_suggestion(self, event):
+        text = self.suggestion_label.text().replace("💡 Suggestion: ", "").strip()
+        if not text:
+            return
+
+        self.message_input.setText(text)
+        self.suggestion_label.setText("")
+
+        # Veritabanında accepted=1 yap
+        try:
+            if hasattr(self, "last_suggestion_id"):
+                requests.patch(f"http://127.0.0.1:5000/suggestions/{self.last_suggestion_id}",
+                               json={"accepted": True})
+        except:
+            pass
+
+    def _schedule_suggestion(self):
+        self.suggestion_timer.start(600)  # 600 ms sonra öneriyi getir
+
+    def _trigger_suggestion(self):
+        self.get_suggestion()

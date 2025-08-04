@@ -4,6 +4,8 @@ from flask_cors import CORS
 import bcrypt
 import os
 from werkzeug.utils import secure_filename
+from ai_module.spell_corrector import correct_spelling
+from ai_module.punctuation_fixer import suggest_punctuation
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
@@ -133,6 +135,48 @@ def upload_media():
     db_service.insert_media(message_id, media_type, f"docs/{filename}")
 
     return jsonify({"message": "Media uploaded", "file_path": f"docs/{filename}"})
+
+
+@app.route("/suggest", methods=["POST"])
+def suggest_text():
+    try:
+        data = request.get_json()
+        text = data.get("text", "").strip()
+        user_id = data.get("user_id")
+
+        if not text or not user_id:
+            return jsonify({"error": "text ve user_id zorunludur"}), 400
+
+        corrected = correct_spelling(text)
+        punctuated = suggest_punctuation(corrected)
+
+        suggestion_id = db_service.insert_suggestion(user_id, text, punctuated)
+
+        return jsonify({
+            "suggestion_id": suggestion_id,
+            "original": text,
+            "corrected": corrected,
+            "punctuated": punctuated
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/suggestions/<int:suggestion_id>", methods=["PATCH"])
+def update_suggestion(suggestion_id):
+    try:
+        data = request.get_json()
+        accepted = data.get("accepted")
+
+        if accepted not in [True, False]:
+            return jsonify({"error": "accepted alanı true/false olmalı"}), 400
+
+        db_service.update_suggestion_acceptance(suggestion_id, accepted)
+        return jsonify({"message": "Kabul durumu güncellendi"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True)
