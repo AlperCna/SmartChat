@@ -2,10 +2,16 @@ from flask import Flask, jsonify, request
 from backend.services import db_service
 from flask_cors import CORS
 import bcrypt
+import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 CORS(app)
+
+# 📂 Medya dosyalarının kaydedileceği klasör
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "..", "docs")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 @app.route("/hello", methods=["GET"])
 def hello():
@@ -34,8 +40,13 @@ def send_message():
     content = data.get("content")
     if not sender_id or not receiver_id or not content:
         return jsonify({"error": "sender_id, receiver_id ve content zorunludur."}), 400
-    db_service.insert_message(sender_id, receiver_id, content)
-    return jsonify({"message": "Mesaj başarıyla gönderildi."})
+
+    message_id = db_service.insert_message(sender_id, receiver_id, content)
+    return jsonify({
+        "message": "Mesaj başarıyla gönderildi.",
+        "message_id": message_id
+    }), 200
+
 
 @app.route("/messages", methods=["GET"])
 def list_messages():
@@ -100,6 +111,28 @@ def get_user_by_id(user_id):
 @app.route("/chat_partners/<int:user_id>", methods=["GET"])
 def chat_partners(user_id):
     return jsonify(db_service.get_chat_partners(user_id))
+
+# 📤 Yeni: Fotoğraf/ses/video medya dosyası yükleme
+@app.route("/upload_media", methods=["POST"])
+def upload_media():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+
+    file = request.files['file']
+    media_type = request.form.get("media_type", "image")
+    message_id = request.form.get("message_id")  # opsiyonel olabilir
+
+    if file.filename == "":
+        return jsonify({"error": "No selected file"}), 400
+
+    filename = secure_filename(file.filename)
+    save_path = os.path.join(UPLOAD_FOLDER, filename)
+    file.save(save_path)
+
+    # veritabanına kayıt
+    db_service.insert_media(message_id, media_type, f"docs/{filename}")
+
+    return jsonify({"message": "Media uploaded", "file_path": f"docs/{filename}"})
 
 if __name__ == "__main__":
     app.run(debug=True)

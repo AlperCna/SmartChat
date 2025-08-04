@@ -1,6 +1,8 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QLabel, QLineEdit, QMessageBox, QListWidgetItem, QDialog
 from PyQt5.QtCore import Qt
 from .chat_window import ChatWindow
+from .camera_widget import CameraWidget
+from .mic_widget import MicWidget
 import requests
 
 class ChatPanelWindow(QWidget):
@@ -62,9 +64,17 @@ class ChatPanelWindow(QWidget):
         self.new_chat_btn = QPushButton("➕ Yeni Sohbet")
         self.new_chat_btn.clicked.connect(self.new_chat)
 
+        self.camera_btn = QPushButton("📷 Kamera Aç")
+        self.camera_btn.clicked.connect(self.open_camera)
+
+        self.mic_btn = QPushButton("🎙️ Mikrofon Aç")
+        self.mic_btn.clicked.connect(self.open_mic)
+
         left_panel.addWidget(self.username_label)
         left_panel.addWidget(self.chat_list)
         left_panel.addWidget(self.new_chat_btn)
+        left_panel.addWidget(self.camera_btn)
+        left_panel.addWidget(self.mic_btn)
 
         # Sağ Panel
         self.chat_area = QVBoxLayout()
@@ -79,6 +89,24 @@ class ChatPanelWindow(QWidget):
         self.chat_list.itemClicked.connect(self.open_selected_chat)
         self.load_user_info()
         self.load_chat_partners()
+
+    def open_camera(self):
+        if not self.active_chat:
+            QMessageBox.warning(self, "Uyarı", "Lütfen önce bir kullanıcıyla sohbet başlatın.")
+            return
+
+        receiver_id = self.active_chat.receiver_id
+        self.cam_window = CameraWidget(self.user_id, receiver_id)
+        self.cam_window.show()
+
+    def open_mic(self):
+        if not self.active_chat:
+            QMessageBox.warning(self, "Uyarı", "Lütfen önce bir kullanıcıyla sohbet başlatın.")
+            return
+
+        receiver_id = self.active_chat.receiver_id
+        self.mic_window = MicWidget(self.user_id, receiver_id)
+        self.mic_window.show()
 
     def load_user_info(self):
         try:
@@ -116,7 +144,7 @@ class ChatPanelWindow(QWidget):
                 sender_username=self.sender_username,
                 receiver_id=receiver_id,
                 receiver_username=receiver_username,
-                on_close_callback=self.close_chat  # ✅ sağ üstteki X butonu çalışır
+                on_close_callback=self.close_chat
             )
             self.chat_area.addWidget(self.chat_widget)
             self.active_chat = self.chat_widget

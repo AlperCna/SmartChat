@@ -5,7 +5,7 @@ def get_db_connection():
     conn = mysql.connector.connect(
         host="localhost",
         user="root",
-        password="Emr314Ir159+",
+        password="bc748596",
         database="smartchat"
     )
     return conn
@@ -33,18 +33,22 @@ def insert_message(sender_id, receiver_id, content):
     cursor = conn.cursor()
     sql = "INSERT INTO messages (sender_id, receiver_id, content) VALUES (%s, %s, %s)"
     cursor.execute(sql, (sender_id, receiver_id, content))
+    message_id = cursor.lastrowid  # ✅ eklendi
     conn.commit()
     cursor.close()
     conn.close()
+    return message_id  # ✅ döndürülüyor
 
 def get_messages(sender_id, receiver_id):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     sql = """
-        SELECT * FROM messages
-        WHERE (sender_id = %s AND receiver_id = %s)
-           OR (sender_id = %s AND receiver_id = %s)
-        ORDER BY timestamp ASC
+        SELECT m.*, media.file_path, media.media_type
+        FROM messages m
+        LEFT JOIN media ON m.message_id = media.message_id
+        WHERE (m.sender_id = %s AND m.receiver_id = %s)
+           OR (m.sender_id = %s AND m.receiver_id = %s)
+        ORDER BY m.timestamp ASC
     """
     cursor.execute(sql, (sender_id, receiver_id, receiver_id, sender_id))
     messages = cursor.fetchall()
@@ -92,3 +96,15 @@ def get_chat_partners(user_id):
     cursor.close()
     conn.close()
     return result
+
+def insert_media(message_id, media_type, file_path):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    sql = """
+        INSERT INTO media (message_id, media_type, file_path, uploaded_at)
+        VALUES (%s, %s, %s, NOW())
+    """
+    cursor.execute(sql, (message_id, media_type, file_path))
+    conn.commit()
+    cursor.close()
+    conn.close()
