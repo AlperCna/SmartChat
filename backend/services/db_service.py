@@ -108,3 +108,28 @@ def insert_media(message_id, media_type, file_path):
     conn.commit()
     cursor.close()
     conn.close()
+
+
+def insert_suggestion(user_id, original_text, suggested_text):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    sql = """
+        INSERT INTO suggestions (user_id, original_text, suggested_text, accepted, timestamp)
+        VALUES (%s, %s, %s, NULL, NOW())
+    """
+    cursor.execute(sql, (user_id, original_text, suggested_text))
+    conn.commit()
+    suggestion_id = cursor.lastrowid
+    cursor.close()
+    conn.close()
+    return suggestion_id
+
+
+def update_suggestion_acceptance(suggestion_id, accepted):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    sql = "UPDATE suggestions SET accepted = %s WHERE suggestion_id = %s"
+    cursor.execute(sql, (int(accepted), suggestion_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
