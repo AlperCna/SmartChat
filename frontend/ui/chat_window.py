@@ -1,8 +1,10 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtCore import Qt, QTimer, QUrl
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 import requests
 from datetime import datetime
-
+import os
 
 class ChatWindow(QWidget):
     def __init__(self, sender_id, sender_username, receiver_id, receiver_username, on_close_callback=None):
@@ -40,6 +42,8 @@ class ChatWindow(QWidget):
         """)
 
         self.layout = QVBoxLayout()
+        self.media_players = []  # 🎧 Ses çalarları RAM'de tut
+
         self.setLayout(self.layout)
 
         title_layout = QHBoxLayout()
@@ -54,7 +58,6 @@ class ChatWindow(QWidget):
         title_layout.addWidget(self.title_label)
         title_layout.addStretch()
         title_layout.addWidget(self.close_button)
-
         self.layout.addLayout(title_layout)
 
         self.scroll = QScrollArea()
@@ -64,7 +67,6 @@ class ChatWindow(QWidget):
         self.message_layout.setAlignment(Qt.AlignTop)
         self.message_container.setLayout(self.message_layout)
         self.scroll.setWidget(self.message_container)
-
         self.layout.addWidget(self.scroll)
 
         self.message_input = QLineEdit()
@@ -93,8 +95,8 @@ class ChatWindow(QWidget):
         try:
             dt = datetime.strptime(timestamp, "%a, %d %b %Y %H:%M:%S %Z")
             time_text = dt.strftime("%H:%M")
-        except Exception as e:
-            print("[TIME_PARSE_ERROR]", timestamp, e)
+        except:
+            pass
 
         header = QLabel(f"{sender}  ⏱ {time_text}")
         header.setStyleSheet("color: #ccc; font-size: 11px; padding-bottom: 2px;")
@@ -113,14 +115,129 @@ class ChatWindow(QWidget):
         wrapper = QWidget()
         wrapper_layout = QVBoxLayout()
         wrapper_layout.setContentsMargins(10, 5, 10, 5)
-        wrapper_layout.setSpacing(0)
         wrapper.setLayout(wrapper_layout)
         wrapper_layout.addWidget(header)
         wrapper_layout.addWidget(body)
 
         align_wrapper = QWidget()
         align_layout = QHBoxLayout()
-        align_layout.setContentsMargins(0, 0, 0, 0)
+        align_wrapper.setLayout(align_layout)
+
+        if sender == self.sender_username:
+            align_layout.addStretch()
+            align_layout.addWidget(wrapper)
+        else:
+            align_layout.addWidget(wrapper)
+            align_layout.addStretch()
+
+        self.message_layout.addWidget(align_wrapper)
+
+    def add_image_label(self, file_path, sender, timestamp):
+        time_text = "--:--"
+        try:
+            dt = datetime.strptime(timestamp, "%a, %d %b %Y %H:%M:%S %Z")
+            time_text = dt.strftime("%H:%M")
+        except:
+            pass
+
+        header = QLabel(f"{sender}  ⏱ {time_text}")
+        header.setStyleSheet("color: #ccc; font-size: 11px; padding-bottom: 2px;")
+
+        image_label = QLabel()
+        image_label.setPixmap(QPixmap(file_path).scaledToWidth(250))
+        image_label.setStyleSheet("border-radius: 10px; padding: 6px;")
+
+        wrapper = QWidget()
+        wrapper_layout = QVBoxLayout()
+        wrapper_layout.setContentsMargins(10, 5, 10, 5)
+        wrapper.setLayout(wrapper_layout)
+        wrapper_layout.addWidget(header)
+        wrapper_layout.addWidget(image_label)
+
+        align_wrapper = QWidget()
+        align_layout = QHBoxLayout()
+        align_wrapper.setLayout(align_layout)
+
+        if sender == self.sender_username:
+            align_layout.addStretch()
+            align_layout.addWidget(wrapper)
+        else:
+            align_layout.addWidget(wrapper)
+            align_layout.addStretch()
+
+        self.message_layout.addWidget(align_wrapper)
+
+    def add_audio_player(self, file_path, sender, timestamp):
+        # Zamanı formatla
+        time_text = "--:--"
+        try:
+            dt = datetime.strptime(timestamp, "%a, %d %b %Y %H:%M:%S %Z")
+            time_text = dt.strftime("%H:%M")
+        except:
+            pass
+
+        # Başlık (isim ve saat)
+        header = QLabel(f"{sender}  ⏱ {time_text}")
+        header.setStyleSheet("color: #ccc; font-size: 11px; padding-bottom: 2px;")
+
+        # 🎵 ikon
+        icon_label = QLabel("🎵")
+        icon_label.setFixedWidth(30)
+        icon_label.setAlignment(Qt.AlignCenter)
+
+        # ▶️ Oynatma butonu
+        play_button = QPushButton("▶️")
+        play_button.setFixedSize(30, 30)
+        play_button.setStyleSheet("""
+            QPushButton {
+                background-color: #5c9dff;
+                border-radius: 15px;
+                color: white;
+                font-weight: bold;
+                font-size: 16px;
+            }
+            QPushButton:hover {
+                background-color: #3a87f2;
+            }
+        """)
+
+        # 🎧 MediaPlayer
+        media_player = QMediaPlayer(self)
+        media_url = QUrl.fromLocalFile(file_path)
+        media_player.setMedia(QMediaContent(media_url))
+
+        def play_audio():
+            print("▶️ Butona basıldı:", file_path)
+            media_player.play()
+
+        play_button.clicked.connect(play_audio)
+        self.media_players.append(media_player)
+
+        # 🎚️ Ses barı (ikon + buton)
+        audio_bar = QWidget()
+        audio_layout = QHBoxLayout()
+        audio_layout.setContentsMargins(10, 6, 10, 6)
+        audio_bar.setLayout(audio_layout)
+        audio_bar.setStyleSheet(f"""
+            background-color: {'#3a87f2' if sender == self.sender_username else '#2c2c2c'};
+            border-radius: 10px;
+        """)
+
+        audio_layout.addWidget(icon_label)
+        audio_layout.addWidget(play_button)
+        audio_layout.addStretch()
+
+        # Tüm bileşenleri içeren kutu
+        wrapper = QWidget()
+        wrapper_layout = QVBoxLayout()
+        wrapper_layout.setContentsMargins(10, 5, 10, 5)
+        wrapper.setLayout(wrapper_layout)
+        wrapper_layout.addWidget(header)
+        wrapper_layout.addWidget(audio_bar)
+
+        # Sağa/sola hizalama
+        align_wrapper = QWidget()
+        align_layout = QHBoxLayout()
         align_wrapper.setLayout(align_layout)
 
         if sender == self.sender_username:
@@ -141,12 +258,21 @@ class ChatWindow(QWidget):
                 for i in reversed(range(self.message_layout.count())):
                     item = self.message_layout.itemAt(i)
                     widget = item.widget()
-                    if widget is not None:
+                    if widget:
                         widget.deleteLater()
+
                 for msg in messages:
-                    print("[DEBUG]", msg)  # terminale basar
                     sender_name = self.sender_username if msg["sender_id"] == self.sender_id else self.receiver_username
-                    self.add_message_label(msg["content"], sender_name, msg.get("timestamp"))
+
+                    if msg.get("media_type") == "image" and msg.get("file_path"):
+                        image_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", msg["file_path"]))
+                        self.add_image_label(image_path, sender_name, msg.get("timestamp"))
+                    elif msg.get("media_type") == "audio" and msg.get("file_path"):
+                        audio_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", msg["file_path"]))
+                        self.add_audio_player(audio_path, sender_name, msg.get("timestamp"))
+                    else:
+                        self.add_message_label(msg["content"], sender_name, msg.get("timestamp"))
+
                 self.scroll.verticalScrollBar().setValue(self.scroll.verticalScrollBar().maximum())
         except Exception as e:
             self.add_message_label(f"Hata: {e}", "Sistem", None)
