@@ -89,11 +89,28 @@ class ChatWindow(QWidget):
         self.layout.addWidget(self.suggestion_label)
         self.suggestion_label.mousePressEvent = self.accept_suggestion
 
-        # Öneri zamanlayıcı (QTimer ile gecikmeli çalıştırma)
+        # AI tamamlama kutusu
+        self.completion_label = QLabel("")
+        self.completion_label.setStyleSheet("color: #6cf; font-style: italic; padding-left: 4px;")
+        self.completion_label.setCursor(Qt.PointingHandCursor)
+        self.layout.addWidget(self.completion_label)
+        self.completion_label.mousePressEvent = self.accept_completion
+
+        # Öneri zamanlayıcı (spell suggestion için gecikmeli tetikleme)
         self.suggestion_timer = QTimer()
         self.suggestion_timer.setSingleShot(True)
         self.suggestion_timer.timeout.connect(self._trigger_suggestion)
+
+        # AI tamamlama zamanlayıcı (yazmayı bırakınca tetikleme)
+        self.typing_timer = QTimer()
+        self.typing_timer.setSingleShot(True)
+        self.typing_timer.timeout.connect(self.get_completion)
+
+        # Input değişim bağlantısı
         self.message_input.textChanged.connect(self._schedule_suggestion)
+        self.message_input.textChanged.connect(self.handle_typing)
+
+        # Thread havuzu
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
         # Gönder butonu ve enter tuşu
@@ -373,3 +390,63 @@ class ChatWindow(QWidget):
 
     def _trigger_suggestion(self):
         self.get_suggestion()
+
+    def get_completion(self):
+        text = self.message_input.text().strip()
+        if not text:
+            self.completion_label.setText("")
+            return
+
+        print(">>> get_completion çağrıldı, kullanıcı girdisi:", text)
+
+        try:
+            payload = {
+                "text": text,
+                "receiver_username": self.receiver_username,
+                "sender_id": self.sender_id,
+                "receiver_id": self.receiver_id
+            }
+            print(">>> Backend'e gönderilen JSON:", payload)
+
+            res = requests.post("http://127.0.0.1:5000/complete", json=payload)
+            print(">>> Backend HTTP status kodu:", res.status_code)
+
+            if res.status_code == 200:
+                data = res.json()
+                print(">>> Backend cevabı (JSON):", data)
+                completion_text = data.get("styled_completion")
+                self.last_completion_id = data.get("suggestion_id")
+                if completion_text and completion_text != text:
+                    self.completion_label.setText(f"✨ AI: {completion_text}")
+                else:
+                    self.completion_label.setText("")
+            else:
+                print("!!! Backend hata cevabı (raw):", res.text)
+                self.completion_label.setText("⚠️ AI error")
+
+        except Exception as e:
+            import traceback
+            print("!!! get_completion hata:", str(e))
+            traceback.print_exc()
+            self.completion_label.setText("⚠️ " + str(e))
+
+    def accept_completion(self, event):
+        text = self.completion_label.text().replace("✨ AI: ", "").strip()
+        if not text:
+            return
+        self.message_input.setText(text)
+        self.completion_label.setText("")
+
+    # Yeni metot:
+    def handle_typing(self):
+        text = self.message_input.text()
+        if not text:
+            return
+
+        last_char = text[-1]
+        # 1️⃣ Kelime bitince hemen tetikle
+        if last_char in [" ", ".", ",", "?", "!"]:
+            self.get_completion()
+        else:
+            # 2️⃣ Yazmayı bırakırsa 800ms sonra tetikle
+            self.typing_timer.start(800)
