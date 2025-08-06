@@ -1,21 +1,43 @@
 # ai_module/style_adapter.py
 
-def detect_style(receiver_username):
+from backend.services import db_service
+from openai import OpenAI
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+print("API Key test:", os.getenv("OPENAI_API_KEY")[:6], "...")  # sadece ilk 6 karakter
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+def detect_style(sender_id, receiver_id, last_message=None):
     """
-    Konuşulan kişiye göre üslup belirler.
+    İki kullanıcı arasındaki ilişki seviyesine göre stil belirler.
+    Kayıt yoksa GPT ile tespit eder ve DB'ye ekler.
     """
-    if not receiver_username:
-        return "neutral"
+    relationship = db_service.get_relationship(sender_id, receiver_id)
+    if relationship and relationship.get("style"):
+        return relationship["style"]
 
-    name = receiver_username.lower()
+    if last_message:
+        prompt = f"""
+        Mesaj: "{last_message}"
+        Görev: Bu mesajın tonunu belirle. 
+        Sadece 'formal', 'neutral' veya 'informal' olarak cevap ver.
+        """
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=5
+        )
+        detected_style = response.choices[0].message.content.strip().lower()
 
-    # Resmi hitap (anne, öğretmen vs.)
-    if name in ["anne", "mom", "mother", "teacher", "hocam"]:
-        return "formal"
+        if not relationship:
+            db_service.create_relationship(sender_id, receiver_id, detected_style, 50)
+        else:
+            db_service.update_relationship(sender_id, receiver_id, style=detected_style)
 
-    # Samimi hitap (arkadaş, kanka vs.)
-    if name in ["kanka", "bro", "buddy", "dostum"]:
-        return "informal"
+        return detected_style
 
     return "neutral"
 

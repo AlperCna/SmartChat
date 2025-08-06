@@ -6,11 +6,12 @@ import os
 from werkzeug.utils import secure_filename
 from ai_module.spell_corrector import correct_spelling
 from ai_module.punctuation_fixer import suggest_punctuation
-from ai_module.completion_model import complete_sentence
 from ai_module.style_adapter import detect_style, adapt_style
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+analyzer = SentimentIntensityAnalyzer()
 
 load_dotenv()
 print("API Key test:", os.getenv("OPENAI_API_KEY")[:6], "...")  # sadece ilk 6 karakter
@@ -199,16 +200,43 @@ def complete_text():
             speaker = "Me" if m["sender_id"] == sender_id else receiver_username
             history += f"{speaker}: {m['content']}\n"
 
-        # Üslup tespiti
-        style = detect_style(receiver_username)
+        # 1️⃣ Üslup tespiti
+        style = detect_style(sender_id, receiver_id, last_message=text)
+        print(f"[DEBUG] Detected style: {style}")
 
-        # GPT‑4o-mini çağrısı
+        # 2️⃣ Mesaj duygu analizi (pozitif/negatif/nötr)
+        sentiment_prompt = f"""
+        Mesaj: "{text}"
+        Görev: Bu mesajın duygusunu sınıflandır.
+        Sadece 'positive', 'negative' veya 'neutral' olarak cevap ver.
+        """
+        sentiment_res = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": sentiment_prompt}],
+            max_tokens=3
+        )
+        sentiment = sentiment_res.choices[0].message.content.strip().lower()
+        print(f"[DEBUG] Sentiment detected: {sentiment}")
+
+        # 3️⃣ Closeness puanı güncelle
+        delta = 0
+        if sentiment == "positive":
+            delta = 5
+        elif sentiment == "negative":
+            delta = -5
+
+        if delta != 0:
+            db_service.adjust_closeness(sender_id, receiver_id, delta)
+            print(f"[DEBUG] Closeness score adjusted by {delta}")
+
+        # 4️⃣ GPT‑4.1-mini ile cümleyi tamamla
         prompt = f"""
         Görev: Aşağıdaki konuşma geçmişine göre, kullanıcının son mesajını yazım hatalarını düzelterek ve '{style}' üsluba uyarlayarak tamamla.
         Konuşma geçmişi:
         {history}
         Kullanıcının son mesajı: {text}
         """
+        print(f"[DEBUG] Prompt sent to GPT:\n{prompt}")
 
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
@@ -217,8 +245,9 @@ def complete_text():
         )
 
         completion_text = response.choices[0].message.content.strip()
+        print(f"[DEBUG] GPT Completion: {completion_text}")
 
-        # Öneriyi DB'ye kaydet
+        # 5️⃣ Öneriyi DB'ye kaydet
         suggestion_id = db_service.insert_suggestion(sender_id, text, completion_text, style)
 
         return jsonify({
@@ -226,7 +255,8 @@ def complete_text():
             "original": text,
             "completion": completion_text,
             "style": style,
-            "styled_completion": completion_text
+            "styled_completion": completion_text,
+            "sentiment": sentiment
         })
 
     except Exception as e:
@@ -234,6 +264,8 @@ def complete_text():
         print("!!! /complete hata:", str(e))
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
 
 @app.route("/suggestions/<int:suggestion_id>", methods=["PATCH"])
 def update_suggestion(suggestion_id):

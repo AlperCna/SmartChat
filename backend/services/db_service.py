@@ -134,3 +134,85 @@ def update_suggestion_acceptance(suggestion_id, accepted):
     conn.commit()
     cursor.close()
     conn.close()
+
+
+def get_relationship(user1_id, user2_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    sql = """
+        SELECT * FROM user_relationships
+        WHERE (user1_id = %s AND user2_id = %s)
+           OR (user1_id = %s AND user2_id = %s)
+    """
+    cursor.execute(sql, (user1_id, user2_id, user2_id, user1_id))
+    relationship = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return relationship
+
+
+def create_relationship(user1_id, user2_id, style="neutral", closeness_score=50):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    sql = """
+        INSERT INTO user_relationships (user1_id, user2_id, style, closeness_score)
+        VALUES (%s, %s, %s, %s)
+    """
+    cursor.execute(sql, (user1_id, user2_id, style, closeness_score))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+
+def update_relationship(user1_id, user2_id, style=None, closeness_score=None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    fields = []
+    values = []
+    if style is not None:
+        fields.append("style = %s")
+        values.append(style)
+    if closeness_score is not None:
+        fields.append("closeness_score = %s")
+        values.append(closeness_score)
+
+    if not fields:
+        return  # Güncellenecek veri yok
+
+    sql = f"""
+        UPDATE user_relationships
+        SET {', '.join(fields)}
+        WHERE (user1_id = %s AND user2_id = %s)
+           OR (user1_id = %s AND user2_id = %s)
+    """
+    values.extend([user1_id, user2_id, user2_id, user1_id])
+    cursor.execute(sql, tuple(values))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def adjust_closeness(user1_id, user2_id, delta):
+    """
+    İlişki puanını delta kadar artırır/azaltır, sınırları 0-100 arasında tutar.
+    Eşik değerlerine göre style'ı otomatik günceller.
+    """
+    relationship = get_relationship(user1_id, user2_id)
+    if relationship:
+        new_score = max(0, min(100, relationship["closeness_score"] + delta))
+
+        # Style belirleme
+        if new_score <= 30:
+            style = "formal"
+        elif new_score >= 71:
+            style = "informal"
+        else:
+            style = "neutral"
+
+        update_relationship(user1_id, user2_id, style=style, closeness_score=new_score)
+    else:
+        # İlişki yoksa oluştur ve puanı uygula
+        create_relationship(user1_id, user2_id, "neutral", 50)
+        adjust_closeness(user1_id, user2_id, delta)
+
