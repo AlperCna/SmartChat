@@ -6,7 +6,16 @@ import os
 from werkzeug.utils import secure_filename
 from ai_module.spell_corrector import correct_spelling
 from ai_module.punctuation_fixer import suggest_punctuation
+from ai_module.completion_model import complete_sentence
+from ai_module.style_adapter import detect_style, adapt_style
+from openai import OpenAI
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
+print("API Key test:", os.getenv("OPENAI_API_KEY")[:6], "...")  # sadece ilk 6 karakter
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 CORS(app)
@@ -162,6 +171,69 @@ def suggest_text():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+
+@app.route("/complete", methods=["POST"])
+def complete_text():
+    try:
+        print(">>> /complete endpoint çağrıldı")
+        data = request.get_json()
+        print("JSON veri:", data)
+        text = data.get("text", "").strip()
+        receiver_username = data.get("receiver_username", "")
+        sender_id = data.get("sender_id")
+        receiver_id = data.get("receiver_id")
+        print(f"Text: {text}, Receiver_username: {receiver_username}, Sender_id: {sender_id}, Receiver_id: {receiver_id}")
+
+        if not text or not sender_id or not receiver_id:
+            print("!!! Eksik parametre")
+            return jsonify({"error": "text, sender_id ve receiver_id zorunludur"}), 400
+
+        # Konuşma geçmişinden son 5 mesajı al
+        messages = db_service.get_messages(sender_id, receiver_id)
+        last_msgs = messages[-5:]
+
+        # Konuşma geçmişini prompt formatına çevir
+        history = ""
+        for m in last_msgs:
+            speaker = "Me" if m["sender_id"] == sender_id else receiver_username
+            history += f"{speaker}: {m['content']}\n"
+
+        # Üslup tespiti
+        style = detect_style(receiver_username)
+
+        # GPT‑4o-mini çağrısı
+        prompt = f"""
+        Görev: Aşağıdaki konuşma geçmişine göre, kullanıcının son mesajını yazım hatalarını düzelterek ve '{style}' üsluba uyarlayarak tamamla.
+        Konuşma geçmişi:
+        {history}
+        Kullanıcının son mesajı: {text}
+        """
+
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=50
+        )
+
+        completion_text = response.choices[0].message.content.strip()
+
+        # Öneriyi DB'ye kaydet
+        suggestion_id = db_service.insert_suggestion(sender_id, text, completion_text, style)
+
+        return jsonify({
+            "suggestion_id": suggestion_id,
+            "original": text,
+            "completion": completion_text,
+            "style": style,
+            "styled_completion": completion_text
+        })
+
+    except Exception as e:
+        import traceback
+        print("!!! /complete hata:", str(e))
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/suggestions/<int:suggestion_id>", methods=["PATCH"])
 def update_suggestion(suggestion_id):

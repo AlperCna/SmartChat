@@ -110,19 +110,20 @@ def insert_media(message_id, media_type, file_path):
     conn.close()
 
 
-def insert_suggestion(user_id, original_text, suggested_text):
+def insert_suggestion(user_id, original_text, suggested_text, style):
     conn = get_db_connection()
     cursor = conn.cursor()
     sql = """
-        INSERT INTO suggestions (user_id, original_text, suggested_text, accepted, timestamp)
-        VALUES (%s, %s, %s, NULL, NOW())
+        INSERT INTO suggestions (user_id, original_text, suggested_text, style, accepted, timestamp)
+        VALUES (%s, %s, %s, %s, NULL, NOW())
     """
-    cursor.execute(sql, (user_id, original_text, suggested_text))
+    cursor.execute(sql, (user_id, original_text, suggested_text, style))
     conn.commit()
     suggestion_id = cursor.lastrowid
     cursor.close()
     conn.close()
     return suggestion_id
+
 
 
 def update_suggestion_acceptance(suggestion_id, accepted):
