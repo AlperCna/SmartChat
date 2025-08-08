@@ -9,21 +9,27 @@ from ai_module.punctuation_fixer import suggest_punctuation
 from ai_module.style_adapter import detect_style, adapt_style
 from openai import OpenAI
 from dotenv import load_dotenv
-import os
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+# Load environment and initialize
 analyzer = SentimentIntensityAnalyzer()
-
 load_dotenv()
-print("API Key test:", os.getenv("OPENAI_API_KEY")[:6], "...")  # sadece ilk 6 karakter
-
+print("API Key test:", os.getenv("OPENAI_API_KEY")[:6], "...")  # show only first 6 chars
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Initialize Flask
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 CORS(app)
 
-# 📂 Medya dosyalarının kaydedileceği klasör
+# Media upload folder
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "..", "docs")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Health check route (for browser testing)
+@app.route("/", methods=["GET"])
+def index():
+    return {"message": "SmartChat Flask backend is alive!"}
 
 @app.route("/hello", methods=["GET"])
 def hello():
@@ -52,13 +58,11 @@ def send_message():
     content = data.get("content")
     if not sender_id or not receiver_id or not content:
         return jsonify({"error": "sender_id, receiver_id ve content zorunludur."}), 400
-
     message_id = db_service.insert_message(sender_id, receiver_id, content)
     return jsonify({
         "message": "Mesaj başarıyla gönderildi.",
         "message_id": message_id
     }), 200
-
 
 @app.route("/messages", methods=["GET"])
 def list_messages():
@@ -124,28 +128,20 @@ def get_user_by_id(user_id):
 def chat_partners(user_id):
     return jsonify(db_service.get_chat_partners(user_id))
 
-# 📤 Yeni: Fotoğraf/ses/video medya dosyası yükleme
 @app.route("/upload_media", methods=["POST"])
 def upload_media():
     if 'file' not in request.files:
         return jsonify({"error": "No file part"}), 400
-
     file = request.files['file']
     media_type = request.form.get("media_type", "image")
-    message_id = request.form.get("message_id")  # opsiyonel olabilir
-
+    message_id = request.form.get("message_id")
     if file.filename == "":
         return jsonify({"error": "No selected file"}), 400
-
     filename = secure_filename(file.filename)
     save_path = os.path.join(UPLOAD_FOLDER, filename)
     file.save(save_path)
-
-    # veritabanına kayıt
     db_service.insert_media(message_id, media_type, f"docs/{filename}")
-
     return jsonify({"message": "Media uploaded", "file_path": f"docs/{filename}"})
-
 
 @app.route("/suggest", methods=["POST"])
 def suggest_text():
@@ -153,72 +149,70 @@ def suggest_text():
         data = request.get_json()
         text = data.get("text", "").strip()
         user_id = data.get("user_id")
-
         if not text or not user_id:
             return jsonify({"error": "text ve user_id zorunludur"}), 400
-
         corrected = correct_spelling(text)
         punctuated = suggest_punctuation(corrected)
-
         suggestion_id = db_service.insert_suggestion(user_id, text, punctuated)
-
         return jsonify({
             "suggestion_id": suggestion_id,
             "original": text,
             "corrected": corrected,
             "punctuated": punctuated
         })
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
 
 @app.route("/complete", methods=["POST"])
 def complete_text():
     try:
-        print(">>> /complete endpoint çağrıldı")
+        print(">>> /complete endpoint called")
         data = request.get_json()
-        print("JSON veri:", data)
+        print("[INPUT] JSON received:", data)
+
         text = data.get("text", "").strip()
         receiver_username = data.get("receiver_username", "")
         sender_id = data.get("sender_id")
         receiver_id = data.get("receiver_id")
-        print(f"Text: {text}, Receiver_username: {receiver_username}, Sender_id: {sender_id}, Receiver_id: {receiver_id}")
+
+        print(f"[INPUT] text='{text}', receiver_username='{receiver_username}', sender_id={sender_id}, receiver_id={receiver_id}")
 
         if not text or not sender_id or not receiver_id:
-            print("!!! Eksik parametre")
+            print("[ERROR] Missing parameters")
             return jsonify({"error": "text, sender_id ve receiver_id zorunludur"}), 400
 
-        # Konuşma geçmişinden son 5 mesajı al
+        # Fetch last 5 messages for conversation context
         messages = db_service.get_messages(sender_id, receiver_id)
+        print(f"[DB] Retrieved {len(messages)} messages from db")
         last_msgs = messages[-5:]
 
-        # Konuşma geçmişini prompt formatına çevir
+        # Build prompt history
         history = ""
         for m in last_msgs:
             speaker = "Me" if m["sender_id"] == sender_id else receiver_username
             history += f"{speaker}: {m['content']}\n"
 
-        # 1️⃣ Üslup tespiti
+        # Detect style
         style = detect_style(sender_id, receiver_id, last_message=text)
-        print(f"[DEBUG] Detected style: {style}")
+        print(f"[STYLE] Detected style: {style}")
 
-        # 2️⃣ Mesaj duygu analizi (pozitif/negatif/nötr)
+        # Analyze sentiment
         sentiment_prompt = f"""
         Mesaj: "{text}"
         Görev: Bu mesajın duygusunu sınıflandır.
         Sadece 'positive', 'negative' veya 'neutral' olarak cevap ver.
         """
+        print(f"[GPT] Sentiment prompt:\n{sentiment_prompt}")
+
         sentiment_res = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": sentiment_prompt}],
             max_tokens=3
         )
         sentiment = sentiment_res.choices[0].message.content.strip().lower()
-        print(f"[DEBUG] Sentiment detected: {sentiment}")
+        print(f"[SENTIMENT] Result: {sentiment}")
 
-        # 3️⃣ Closeness puanı güncelle
+        # Adjust closeness
         delta = 0
         if sentiment == "positive":
             delta = 5
@@ -227,16 +221,16 @@ def complete_text():
 
         if delta != 0:
             db_service.adjust_closeness(sender_id, receiver_id, delta)
-            print(f"[DEBUG] Closeness score adjusted by {delta}")
+            print(f"[CLOSENESS] Adjusted by {delta} based on sentiment")
 
-        # 4️⃣ GPT‑4.1-mini ile cümleyi tamamla
+        # Build final completion prompt
         prompt = f"""
         Görev: Aşağıdaki konuşma geçmişine göre, kullanıcının son mesajını yazım hatalarını düzelterek ve '{style}' üsluba uyarlayarak tamamla.
         Konuşma geçmişi:
         {history}
         Kullanıcının son mesajı: {text}
         """
-        print(f"[DEBUG] Prompt sent to GPT:\n{prompt}")
+        print(f"[GPT] Completion prompt:\n{prompt}")
 
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
@@ -245,10 +239,11 @@ def complete_text():
         )
 
         completion_text = response.choices[0].message.content.strip()
-        print(f"[DEBUG] GPT Completion: {completion_text}")
+        print(f"[COMPLETION] Generated: {completion_text}")
 
-        # 5️⃣ Öneriyi DB'ye kaydet
+        # Save suggestion to DB
         suggestion_id = db_service.insert_suggestion(sender_id, text, completion_text, style)
+        print(f"[DB] Suggestion saved with ID: {suggestion_id}")
 
         return jsonify({
             "suggestion_id": suggestion_id,
@@ -261,10 +256,9 @@ def complete_text():
 
     except Exception as e:
         import traceback
-        print("!!! /complete hata:", str(e))
+        print("[ERROR] Exception occurred in /complete:", str(e))
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-
 
 
 @app.route("/suggestions/<int:suggestion_id>", methods=["PATCH"])
@@ -272,15 +266,13 @@ def update_suggestion(suggestion_id):
     try:
         data = request.get_json()
         accepted = data.get("accepted")
-
         if accepted not in [True, False]:
             return jsonify({"error": "accepted alanı true/false olmalı"}), 400
-
         db_service.update_suggestion_acceptance(suggestion_id, accepted)
         return jsonify({"message": "Kabul durumu güncellendi"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+# 🔥 Run the app only if executed directly (not when imported by Gunicorn)
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000)
